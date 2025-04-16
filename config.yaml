@@ -1,0 +1,17 @@
+---
+name: HomeDeck Manager
+version: "0.1.0"
+slug: homedeck_manager_ingress
+description: Ingress addon to manage HomeDeck devices
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+ingress: true
+panel_icon: 'mdi:view-grid-plus'
+boot: auto
+host_network: true
+ingress_port: 4663
+ports:
+  4663/tcp: 4663

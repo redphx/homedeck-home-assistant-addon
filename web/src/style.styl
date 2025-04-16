@@ -1,0 +1,147 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.content {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+}
+
+#editor {
+  flex: 1;
+  height: 100vh !important;
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 400px;
+  max-width: 400px;
+
+  .status {
+    border-radius: 4px;
+    text-align: center;
+
+  }
+
+  .controls {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+
+    button {
+      flex: 1;
+    }
+  }
+
+  button {
+    height: 30px;
+  }
+}
+
+.info-panel {
+  padding: 4px;
+  margin: 10px 0;
+
+  .devices {
+    width: 100%;
+    margin-bottom: 10px;
+  }
+
+  label {
+    display: block;
+
+    span {
+      font-weight: bold;
+
+      &.info-status {
+        color: white;
+
+        &[data-status="running"] {
+          color: green;
+        }
+
+        &[data-status="stopped"] {
+          color: yellow;
+        }
+
+        &[data-status="unavailable"] {
+          color: red;
+        }
+      }
+    }
+  }
+}
+
+#problems {
+  font-size: 14px;
+
+  li {
+    cursor: pointer;
+
+    &:hover {
+      background-color: red;
+    }
+  }
+}
+
+#logs {
+  ul {
+    padding: 10px 0;
+    margin: 0;
+    max-height: 400px;
+    overflow: auto;
+    list-style: none;
+
+    li {
+      span {
+        color: green;
+        font-family: monospace;
+        font-size: 0.9rem;
+      }
+    }
+  }
+}
+
+.btn-save {
+  margin-top: 20px;
+}
+
+.btn-reload {
+  display: block;
+  margin-top: 20px;
+  height: 30px;
+  min-width: 100px;
+}
+
+.gone {
+  display: none;
+}

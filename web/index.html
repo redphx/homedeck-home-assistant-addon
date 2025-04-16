@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HomeDeck Manager</title>
+  </head>
+  <body>
+    <div class="message">Scanning for devices. Please wait...</div>
+
+    <div class="content gone">
+      <div id="editor"></div>
+      <div class="panels">
+        <div class="info-panel">
+          <select class="devices"></select>
+          <label>
+            Device: <span class="info-device"></span>
+          </label>
+          <label>
+            HomeDeck: <span class="info-version"></span>
+          </label>
+          <label>
+            Status: <span class="info-status"></span>
+          </label>
+        </div>
+
+        <div class="controls">
+          <button class="btn-start">Start</button>
+          <button class="btn-stop">Stop</button>
+        </div>
+
+        <button class="btn-save"> Update configuration</button>
+
+        <div id="problems" class="gone">
+          <h2>Problems</h2>
+          <ul></ul>
+        </div>
+
+        <div id="logs">
+          <h2>Logs</h2>
+          <ul></ul>
+        </div>
+
+      </div>
+    </div>
+    <script type="module" src="./src/index.ts"></script>
+  </body>
+</html>
