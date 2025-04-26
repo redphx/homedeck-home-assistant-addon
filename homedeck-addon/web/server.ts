@@ -1,4 +1,3 @@
-import Bonjour from "bonjour-service";
 import express from "express";
 // import ViteExpress from "vite-express";
 import url from 'url';
@@ -9,12 +8,17 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import compression from 'compression';
 
+import os from "os";
+import mdns from "multicast-dns";
+import type { StringAnswer, SrvAnswer, TxtAnswer } from "dns-packet";
+
 
 type MdnsDevice = {
-    name: string;
-    address: string;
-    port: number;
-    properties: {
+    name?: string;
+    host?: string;
+    address?: string;
+    port?: number;
+    properties?: {
         version: string;
         api_version: string;
     };
@@ -107,57 +111,82 @@ function isValidHost(str: string) {
     return validIp && validPort;
 };
 
-function scanMdns(): Promise<{ name: string; address: string; port: number }[]> {
+function scanMdns(): Promise<{ name?: string; host?: string; address?: string; port?: number }[]> {
     return new Promise(resolve => {
-        const bonjour = new Bonjour();
-        const services: MdnsDevice[] = [];
+        // const bonjour = new Bonjour();
+        const services: Record<string, MdnsDevice> = {};
 
-        /*
-        // Test
-        services.push({
-            name: 'Test',
-            address: '127.0.0.1',
-            port: 123,
-            properties: {
-                version: '1.0',
-                api_version: '1',
-            },
-        });
-        */
+        const interfaces = os.networkInterfaces();
+        const timeoutMs = 5000;
+        const mdnsInstances: any[] = [];
 
-        const browser = bonjour.find({ type: 'homedeck' });
-        browser.on('up', async service => {
-            const addresses = service.addresses;
-            // Test connection to addresses
-            for (const addr of addresses) {
-                const url = `http://${addr}:${service.port}/v${service.txt.api_version}/status`;
-                try {
-                    const response = await fetch(url, {
-                        method: 'HEAD',
-                        signal: AbortSignal.timeout(500),
+        Object.entries(interfaces).forEach(([name, addresses]: [any, any]) => {
+            addresses.filter(addr => addr.family === 'IPv4' && !addr.internal).forEach(addr => {
+                const mdnsInstance = mdns({ bind: '0.0.0.0', interface: addr.address });
+                mdnsInstances.push(mdnsInstance);
+
+                mdnsInstance.on('response', response => {
+                    response.answers.filter(answer => answer.name === '_homedeck._tcp.local' && answer.type === 'PTR')
+                        .forEach(answer => {
+                            const host = (answer as StringAnswer).data;
+                            if (!services[host]) {
+                                services[host] = {};
+                            }
+                            services[host].name = host;
+                        });
+
+                    response.additionals.forEach(answer => {
+                        switch (answer.type) {
+                            case 'SRV':
+                                if (!(answer.name in services)) {
+                                    return;
+                                }
+
+                                const { target, port } = (answer as SrvAnswer).data;
+                                services[answer.name].host = target;
+                                services[answer.name].port = port;
+                                break;
+                            case 'A':
+                                for (const key in services) {
+                                    if (services[key].host === answer.name) {
+                                        services[key].address = (answer as StringAnswer).data;
+                                    }
+                                }
+                                break;
+                            case 'TXT':
+                                if (!(answer.name in services)) {
+                                    return;
+                                }
+
+                                const txtData = answer.data;
+                                const txtObject = {};
+
+                                for (const buf of txtData) {
+                                    const entry = buf.toString(); // e.g., 'path=/api'
+                                    const [key, value] = entry.split('=');
+                                    txtObject[key] = value || true; // supports boolean flags
+                                };
+                                services[answer.name].properties = txtObject as unknown as MdnsDevice['properties'];
+                                break;
+                        }
                     });
 
-                    if (response.status === 200) {
-                        services.push({
-                            name: service.name,
-                            address: addr,
-                            port: service.port,
-                            properties: service.txt,
-                        });
-                        break;
-                    }
-                } catch (e) {
-                    console.log(e);
-                }
-            }
+                    // Send a query for all service types
+                    mdnsInstance.query([{
+                        name: '_homedeck._tcp.local.',
+                        type: 'PTR',
+                    }]);
+
+                    console.log(`Scanning on interface ${name} (${addr.address})...`);
+                });
+            });
         });
 
         // Stop scanning after 3 seconds and resolve
         setTimeout(() => {
-            browser.stop();
-            bonjour.destroy();
-            resolve(services);
-        }, 5000);
+            mdnsInstances.forEach(instance => instance.destroy());
+            resolve(Object.values(services));
+        }, timeoutMs);
     });
 }
 
