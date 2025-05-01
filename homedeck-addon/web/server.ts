@@ -24,6 +24,8 @@ type MdnsDevice = {
     };
 }
 
+const MDNS_SERVICES: Record<string, MdnsDevice> = {};
+
 
 class RemoteWebSocketManager {
     // Map to keep a persistent remote connection per host
@@ -111,82 +113,73 @@ function isValidHost(str: string) {
     return validIp && validPort;
 };
 
-function scanMdns(): Promise<{ name?: string; host?: string; address?: string; port?: number }[]> {
-    return new Promise(resolve => {
-        // const bonjour = new Bonjour();
-        const services: Record<string, MdnsDevice> = {};
+function scanMdns() {
+    const interfaces = os.networkInterfaces();
+    const timeoutMs = 5000;
+    const mdnsInstances: any[] = [];
 
-        const interfaces = os.networkInterfaces();
-        const timeoutMs = 5000;
-        const mdnsInstances: any[] = [];
+    Object.entries(interfaces).forEach(([name, addresses]: [any, any]) => {
+        addresses.filter(addr => addr.family === 'IPv4' && !addr.internal).forEach(addr => {
+            const mdnsInstance = mdns({ bind: '0.0.0.0', interface: addr.address });
+            mdnsInstances.push(mdnsInstance);
 
-        Object.entries(interfaces).forEach(([name, addresses]: [any, any]) => {
-            addresses.filter(addr => addr.family === 'IPv4' && !addr.internal).forEach(addr => {
-                const mdnsInstance = mdns({ bind: '0.0.0.0', interface: addr.address });
-                mdnsInstances.push(mdnsInstance);
-
-                mdnsInstance.on('response', response => {
-                    response.answers.filter(answer => answer.name === '_homedeck._tcp.local' && answer.type === 'PTR')
-                        .forEach(answer => {
-                            const host = (answer as StringAnswer).data;
-                            if (!services[host]) {
-                                services[host] = {};
-                            }
-                            services[host].name = host;
-                        });
-
-                    response.additionals.forEach(answer => {
-                        switch (answer.type) {
-                            case 'SRV':
-                                if (!(answer.name in services)) {
-                                    return;
-                                }
-
-                                const { target, port } = (answer as SrvAnswer).data;
-                                services[answer.name].host = target;
-                                services[answer.name].port = port;
-                                break;
-                            case 'A':
-                                for (const key in services) {
-                                    if (services[key].host === answer.name) {
-                                        services[key].address = (answer as StringAnswer).data;
-                                    }
-                                }
-                                break;
-                            case 'TXT':
-                                if (!(answer.name in services)) {
-                                    return;
-                                }
-
-                                const txtData = answer.data;
-                                const txtObject = {};
-
-                                for (const buf of txtData) {
-                                    const entry = buf.toString(); // e.g., 'path=/api'
-                                    const [key, value] = entry.split('=');
-                                    txtObject[key] = value || true; // supports boolean flags
-                                };
-                                services[answer.name].properties = txtObject as unknown as MdnsDevice['properties'];
-                                break;
+            mdnsInstance.on('response', response => {
+                response.answers.filter(answer => answer.name === '_homedeck._tcp.local' && answer.type === 'PTR')
+                    .forEach(answer => {
+                        const host = (answer as StringAnswer).data;
+                        if (!MDNS_SERVICES[host]) {
+                            MDNS_SERVICES[host] = {};
                         }
+                        MDNS_SERVICES[host].name = host;
                     });
 
-                    // Send a query for all service types
-                    mdnsInstance.query([{
-                        name: '_homedeck._tcp.local.',
-                        type: 'PTR',
-                    }]);
+                response.additionals.forEach(answer => {
+                    switch (answer.type) {
+                        case 'SRV':
+                            if (!(answer.name in MDNS_SERVICES)) {
+                                return;
+                            }
 
-                    console.log(`Scanning on interface ${name} (${addr.address})...`);
+                            const { target, port } = (answer as SrvAnswer).data;
+                            MDNS_SERVICES[answer.name].host = target;
+                            MDNS_SERVICES[answer.name].port = port;
+                            break;
+                        case 'A':
+                            for (const key in MDNS_SERVICES) {
+                                if (MDNS_SERVICES[key].host === answer.name) {
+                                    MDNS_SERVICES[key].address = (answer as StringAnswer).data;
+                                }
+                            }
+                            break;
+                        case 'TXT':
+                            if (!(answer.name in MDNS_SERVICES)) {
+                                return;
+                            }
+
+                            const txtData = answer.data;
+                            const txtObject = {};
+
+                            for (const buf of txtData) {
+                                const entry = buf.toString(); // e.g., 'path=/api'
+                                const [key, value] = entry.split('=');
+                                txtObject[key] = value || true; // supports boolean flags
+                            };
+                            MDNS_SERVICES[answer.name].properties = txtObject as unknown as MdnsDevice['properties'];
+                            break;
+                    }
                 });
             });
-        });
 
-        // Stop scanning after 3 seconds and resolve
-        setTimeout(() => {
-            mdnsInstances.forEach(instance => instance.destroy());
-            resolve(Object.values(services));
-        }, timeoutMs);
+            // Send a query for all service types
+            setInterval(() => {
+                mdnsInstance.query([{
+                    name: '_homedeck._tcp.local.',
+                    type: 'PTR',
+                }]);
+            }, 10000);
+
+            console.log(`Scanning on interface ${name} (${addr.address})...`);
+        });
     });
 }
 
@@ -200,7 +193,21 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')))
 
 app.get('/devices', async (_, res) => {
-    const services = await scanMdns();
+    const services: MdnsDevice[] = [];
+
+    for (const service of Object.values(MDNS_SERVICES)) {
+        const url = `http://${service.address}:${service.port}/v${service.properties?.api_version}/status`;
+        try {
+            const resp = await fetch(url, {
+                method: 'HEAD',
+            });
+
+            if (resp.status === 200) {
+                services.push(service);
+            }
+        } catch (e) {}
+    };
+
     res.send({ data: services });
 });
 
@@ -265,6 +272,8 @@ app.post('/proxy/:host/v:api_version/:endpoint', async (req, res) => {
         res.json({ error: `Unreachable: ${url}` });
     }
 });
+
+scanMdns();
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
